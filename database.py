@@ -105,6 +105,11 @@ def initialize_database():
                 photo_path TEXT,
                 sent_at TEXT NOT NULL,
                 delivery_status TEXT,
+                whatsapp_attempted INTEGER DEFAULT 0,
+                whatsapp_succeeded INTEGER DEFAULT 0,
+                location_available INTEGER DEFAULT 0,
+                photo_captured INTEGER DEFAULT 0,
+                channel TEXT DEFAULT 'SMS',
                 FOREIGN KEY (event_id) REFERENCES safety_events(id)
             );
         """)
@@ -118,7 +123,12 @@ def initialize_database():
         })
         _migrate_table_columns(conn, "emergency_alerts", {
             "location_accuracy": "REAL",
-            "photo_path": "TEXT"
+            "photo_path": "TEXT",
+            "whatsapp_attempted": "INTEGER DEFAULT 0",
+            "whatsapp_succeeded": "INTEGER DEFAULT 0",
+            "location_available": "INTEGER DEFAULT 0",
+            "photo_captured": "INTEGER DEFAULT 0",
+            "channel": "TEXT DEFAULT 'SMS'"
         })
 
     logger.info("Database schema initialized and verified successfully.")
@@ -288,7 +298,12 @@ def save_emergency_alert(
     longitude: Optional[float] = None,
     location_accuracy: Optional[float] = None,
     photo_path: Optional[str] = None,
-    delivery_status: str = "PENDING"
+    delivery_status: str = "PENDING",
+    whatsapp_attempted: int = 0,
+    whatsapp_succeeded: int = 0,
+    location_available: int = 0,
+    photo_captured: int = 0,
+    channel: str = "SMS"
 ) -> int:
     """Logs an outgoing or simulated emergency alert dispatch."""
     with get_connection() as conn:
@@ -305,9 +320,14 @@ def save_emergency_alert(
                 location_accuracy,
                 photo_path,
                 sent_at,
-                delivery_status
+                delivery_status,
+                whatsapp_attempted,
+                whatsapp_succeeded,
+                location_available,
+                photo_captured,
+                channel
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             event_id,
             recipient_type,
@@ -319,10 +339,23 @@ def save_emergency_alert(
             location_accuracy,
             str(photo_path) if photo_path else None,
             datetime.now().isoformat(),
-            delivery_status
+            delivery_status,
+            int(whatsapp_attempted),
+            int(whatsapp_succeeded),
+            int(location_available),
+            int(photo_captured),
+            channel
         ))
         conn.commit()
         return cursor.lastrowid
+
+
+def get_emergency_alerts_for_event(event_id: int) -> List[Dict[str, Any]]:
+    """Retrieves all alert dispatches associated with a safety event."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM emergency_alerts WHERE event_id = ? ORDER BY id ASC;", (event_id,))
+        return [dict(r) for r in cursor.fetchall()]
 
 
 def get_event_statistics() -> Dict[str, Any]:

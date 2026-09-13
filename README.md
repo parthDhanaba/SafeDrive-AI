@@ -22,6 +22,7 @@ SafeDrive AI is a real-time computer-vision safety system that actively monitors
 - [Installation & Setup](#-installation--setup)
 - [Running SafeDrive AI](#-running-safedrive-ai)
 - [Keyboard Controls & Shortcuts](#-keyboard-controls--shortcuts)
+- [Live Location & WhatsApp Family Alert](#-live-location--whatsapp-family-alert)
 - [Notifications Architecture](#-notifications-architecture)
 - [Database Schema](#-database-schema)
 - [Privacy & Security](#-privacy--security)
@@ -75,8 +76,8 @@ SafeDrive AI follows a decoupled, modular architecture designed for high-frame-r
          ┌───────────────────────┼──────────────────────┐
          ▼                       ▼                      ▼
 ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
-│ Single Emergency │   │ Windows Device   │   │ Provider-Free    │
-│ Snapshot Capture │   │ GPS Coordinates  │   │ Mock SMS / Twilio│
+│ Single Emergency │   │ Windows Device   │   │ WhatsApp Family  │
+│ Snapshot Capture │   │ GPS Fix & Maps   │   │ & SMS Dispatch   │
 └──────────────────┘   └──────────────────┘   └──────────────────┘
 ```
 
@@ -95,10 +96,11 @@ SafeDrive AI follows a decoupled, modular architecture designed for high-frame-r
    - Single-key acknowledgement (`R`) resets alarm, countdown, and detector state without race conditions.
    - Opening eyes does **not** prematurely clear a 3-yawn hazard state before explicit acknowledgement.
 5. **Autonomous Emergency SOS Orchestration**:
-   - Subsystem fault isolation: If camera snapshot, GPS fix, or SMS dispatch fails, other subsystems continue uninterrupted.
+   - Subsystem fault isolation: If camera snapshot, GPS fix, or WhatsApp dispatch fails, other subsystems continue uninterrupted.
    - **Emergency Snapshot**: Exactly one timestamped frame saved locally under `emergency_captures/`.
    - **Device GPS Location**: Native Windows `GeoCoordinateWatcher` coordinates with horizontal accuracy and Google Maps links.
-   - **Zero-Cost Alert Dispatch**: Ships with `MockSMSProvider` (`SIMULATED` status) so no paid third-party SMS service is required. Optional Twilio integration is available.
+   - **WhatsApp Family Alert**: Sends emergency alert to driver's family contact with live Google Maps location.
+   - **Zero-Cost Alert Dispatch**: Ships with `MockWhatsAppProvider` and `MockSMSProvider` (`SIMULATED` status) so no paid third-party accounts are required.
 6. **Premium Glassmorphic Desktop Dashboard**:
    - Dark obsidian UI built with CustomTkinter.
    - Real-time video canvas, live telemetry cards, system stats, and searchable event history audit log.
@@ -122,26 +124,29 @@ $$MAR = \frac{||p_{\text{top}} - p_{\text{bottom}}||}{||p_{\text{left}} - p_{\te
 
 ---
 
-## ⏱️ Emergency & SOS Workflow
+## 🚨 Emergency & SOS Workflow
 
-1. **Normal Monitoring**: Attentive driver; EAR and MAR normal; green indicators.
-2. **Danger Detected**: Eyes closed $\ge 45$ frames OR yawn count $\ge 3$.
-   - Audio alarm starts playing in a continuous loop.
-   - Countdown timer activates: **RESPOND IN: 10s**.
-3. **Driver Acknowledges**: Driver presses `R`.
-   - Alarm stops immediately.
-   - Countdown cancelled.
-   - Detector counters reset to 0.
-   - Normal monitoring resumes without re-triggering.
-4. **No Response (Timeout)**: 10 seconds elapse without driver acknowledgement:
-   - **Emergency Mode** activates.
-   - **Hazard Status**: Set to ON.
-   - **Single Photo**: Captured and saved locally to `emergency_captures/emergency_YYYYMMDD_HHMMSS.jpg`.
-   - **GPS Fix**: Device location acquired (e.g., `Lat 16.9889, Lon 73.3065 ±50m`).
-   - **Google Maps Link**: Generated automatically.
-   - **SQLite Event**: Saved with `CRITICAL` severity and `NO_RESPONSE` status.
-   - **SOS Notification**: Dispatched via `MockSMSProvider` (status: `SIMULATED`) or configured provider.
-   - Audio alarm continues playing until driver presses `R`.
+The complete, end-to-end safety lifecycle:
+
+```
+DROWSINESS OR 3-YAWN DANGER
+           │
+           ▼
+[ ACOUSTIC SIREN ACTIVATED ] ─── 10-Second Driver Response Countdown
+           │
+           ├── Driver presses 'R' ──► System immediately resets to NORMAL
+           │
+           ▼ (Timeout: 10s Elapsed without Response)
+[ EMERGENCY MODE ACTIVATED ]
+           │
+           ├── 1. Alarm continues playing & hazard state remains ON
+           ├── 2. Capture high-res emergency frame to emergency_captures/
+           ├── 3. Query native Windows GPS coordinates (GeoCoordinateWatcher)
+           ├── 4. Generate Google Maps link
+           ├── 5. Send WhatsApp Emergency Alert to Family Contact
+           ├── 6. Record complete event & alerts into SQLite
+           └── 7. Continue periodic live location updates until 'R' is pressed
+```
 
 ---
 
@@ -157,7 +162,13 @@ SafeDrive-AI/
 ├── location.py             # Windows GeoCoordinateWatcher location provider
 ├── camera_capture.py       # Verified local emergency snapshot capture
 ├── emergency.py            # Emergency coordinator & SOS fault-isolated pipeline
-├── notifications.py        # Provider-independent notification subsystem (Mock & Twilio)
+├── notifications/          # Provider-independent notifications architecture
+│   ├── __init__.py         # Re-exports core notification interfaces
+│   ├── base.py             # Abstract provider, results, and message formatters
+│   ├── mock_provider.py    # MockSMSProvider & MockWhatsAppProvider (Zero-Cost)
+│   ├── whatsapp_provider.py# Official Meta WhatsApp Cloud API provider
+│   ├── sms_provider.py     # Optional Twilio SMS provider
+│   └── manager.py          # Notification manager coordinating alert dispatches
 ├── sms.py                  # Backward-compatible SMS wrapper
 ├── database.py             # SQLite database layer with non-destructive migrations
 ├── setup.py                # Driver and vehicle profile registration CLI
@@ -259,9 +270,94 @@ python app.py --camera 1
 
 ---
 
+## 📲 Live Location & WhatsApp Family Alert
+
+SafeDrive AI automatically dispatches an emergency **WhatsApp message to the driver's family contact** when emergency mode triggers (after the 10-second countdown or upon severe emergency conditions).
+
+### Message Specification
+The WhatsApp emergency message conforms strictly to the prompt specification:
+```
+SAFE DRIVE-AI EMERGENCY ALERT
+
+Driver: <driver name>
+Vehicle: <vehicle number>
+
+The system has detected a serious driver-safety emergency and the driver did not respond.
+
+LIVE LOCATION:
+<Google Maps location link>
+
+Time:
+<timestamp>
+
+Emergency photo:
+<photo reference/link>
+
+Please contact the driver immediately.
+```
+
+### Environment Variables
+Configure your WhatsApp settings in `.env`:
+```env
+# Enable/Disable WhatsApp Emergency Notifications (Default: true)
+WHATSAPP_ENABLED=true
+
+# Provider Options: 'mock' (default, zero-cost) or 'meta_cloud' (official Meta API)
+WHATSAPP_PROVIDER=mock
+
+# Required only if WHATSAPP_PROVIDER=meta_cloud:
+WHATSAPP_ACCESS_TOKEN=your_meta_system_user_token
+WHATSAPP_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
+WHATSAPP_RECIPIENT_PHONE=+1234567890
+WHATSAPP_API_VERSION=v20.0
+
+# Interval in seconds for periodic location updates during sustained emergency (Default: 60)
+WHATSAPP_LOCATION_UPDATE_INTERVAL=60
+```
+
+### How to Test Using Mock Mode (Default & Zero-Cost)
+By default, `WHATSAPP_PROVIDER=mock`. No Meta business verification, phone numbers, or credit card are needed. When emergency mode activates, the mock provider outputs:
+```
+[MOCK WHATSAPP]
+Emergency alert sent to: <phone number>
+Location: https://www.google.com/maps?q=...
+Photo: emergency_YYYYMMDD_HHMMSS.jpg
+```
+The alert status is set to `SIMULATED` and permanently logged to SQLite.
+
+### How to Configure Official Meta WhatsApp Cloud API
+For production vehicles or fleet deployment:
+1. Create a Meta Developer account at [developers.facebook.com](https://developers.facebook.com/) and register a **Business App**.
+2. Add the **WhatsApp** product to your app.
+3. In the WhatsApp Cloud API dashboard, generate an access token and copy your **Phone Number ID**.
+4. Configure `.env`:
+   ```env
+   WHATSAPP_ENABLED=true
+   WHATSAPP_PROVIDER=meta_cloud
+   WHATSAPP_ACCESS_TOKEN=your_token_here
+   WHATSAPP_PHONE_NUMBER_ID=your_phone_id_here
+   WHATSAPP_RECIPIENT_PHONE=+15551234567
+   ```
+5. SafeDrive AI uses official HTTPS endpoints (`graph.facebook.com`) with 8-second timeouts, token redaction in all logs, and automatic error containment.
+
+### What "Live Location" Means & Limitations
+- **Current Device Coordinates**: SafeDrive AI queries the native Windows `GeoCoordinateWatcher` for hardware GPS / Wi-Fi positioning.
+- **Google Maps Integration**: Generates clickable Google Maps URLs (`https://www.google.com/maps?q={lat},{lon}`) with horizontal accuracy estimates.
+- **Continuous Periodic Tracking**: While emergency mode remains active without driver acknowledgement, SafeDrive AI periodically dispatches updated location coordinates at the configured interval (`WHATSAPP_LOCATION_UPDATE_INTERVAL`, default 60s).
+- **Instant Halt on Reset**: Pressing `R` instantly terminates the periodic tracking thread and restores normal monitoring.
+- **API Limitations**: Continuous real-time vector beaconing (like consumer WhatsApp mobile app "Share Live Location") is restricted by Meta to mobile client-to-client sessions. SafeDrive AI solves this by transmitting exact Google Maps coordinates and continuous periodic updates.
+- **Disabling WhatsApp**: Set `WHATSAPP_ENABLED=false` to completely disable WhatsApp alerts without affecting detection or alarms.
+
+---
+
 ## 📱 Notifications Architecture
 
-SafeDrive AI does **not** force users into paid third-party SMS plans or restricted trial accounts.
+SafeDrive AI uses a provider-independent architecture under `notifications/`:
+- `notifications.base`: Abstract `NotificationProvider` and dataclasses.
+- `notifications.mock_provider`: `MockSMSProvider` and `MockWhatsAppProvider`.
+- `notifications.whatsapp_provider`: `MetaCloudWhatsAppProvider`.
+- `notifications.sms_provider`: `TwilioSMSProvider`.
+- `notifications.manager`: High-level alert dispatchers and SQLite persistence.
 
 ### Mock SMS Provider (Default & Recommended)
 - Automatically enabled when `USE_MOCK_SMS=true` (or by default).
@@ -323,7 +419,7 @@ Run the full automated test suite:
 ```powershell
 py -3.11 -m unittest discover -s tests -p "test_*.py" -v
 ```
-All 25 unit and integration tests validate database migrations, detection math, location providers, camera captures, notification handlers, emergency state transitions, and the UI dashboard.
+All **35 unit and integration tests** validate database migrations, detection math, location providers, camera captures, notification handlers, emergency state transitions, UI dashboard, and the complete WhatsApp family alert workflow (including Google Maps link generation, mock dispatches, missing credentials handling, token redaction, API failure resilience, single-dispatch enforcement, periodic tracking, and SQLite logging).
 
 ---
 

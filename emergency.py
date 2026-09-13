@@ -9,18 +9,22 @@ import threading
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-from config import RESPONSE_TIMEOUT_SECONDS, YAWN_LIMIT
+from config import RESPONSE_TIMEOUT_SECONDS, YAWN_LIMIT, WHATSAPP_LOCATION_UPDATE_INTERVAL
 from logger import logger
 from location import get_emergency_location, Location
 from camera_capture import capture_emergency_photo
-from notifications import send_emergency_notification, NotificationResult
+from notifications import (
+    send_emergency_notification,
+    send_whatsapp_family_alert,
+    NotificationResult
+)
 from database import save_safety_event
 
 
 class EmergencyCoordinator:
     """
     Coordinates the entire safety, warning, countdown, and emergency workflow.
-    Ensures that failures in any subsystem (photo, location, SMS, DB) are isolated.
+    Ensures that failures in any subsystem (photo, location, WhatsApp, SMS, DB) are isolated.
     """
 
     def __init__(self, alarm_manager):
@@ -39,6 +43,7 @@ class EmergencyCoordinator:
         self.previous_yawn_count: int = 0
         self.drowsy_logged: bool = False
         self.sos_triggered: bool = False
+        self.whatsapp_sent: bool = False
 
         # Status summaries for UI
         self.last_event_id: Optional[int] = None
@@ -48,7 +53,14 @@ class EmergencyCoordinator:
         self.last_notification_error: Optional[str] = None
         self.last_provider_name: str = "Mock SMS"
 
+        # WhatsApp alert status summaries
+        self.last_whatsapp_status: str = "IDLE"
+        self.last_whatsapp_error: Optional[str] = None
+        self.last_whatsapp_provider: str = "Mock WhatsApp"
+
         self._sos_lock = threading.Lock()
+        self._stop_periodic_updates = threading.Event()
+        self._periodic_thread: Optional[threading.Thread] = None
 
     def update(
         self,
@@ -258,7 +270,26 @@ class EmergencyCoordinator:
         except Exception as e:
             logger.error(f"SOS Database Event Logging Error: {e}")
 
-        # 4. Notification Subsystem (Mock or Optional Real SMS)
+        # 4. WhatsApp Family Alert Subsystem (Prompt Priority Requirement)
+        try:
+            wa_result: NotificationResult = send_whatsapp_family_alert(
+                driver=driver,
+                vehicle=vehicle,
+                location_obj=location_obj,
+                photo_path=Path(photo_path) if photo_path else None,
+                event_id=event_id
+            )
+            self.last_whatsapp_status = wa_result.status
+            self.last_whatsapp_provider = wa_result.provider_name
+            self.last_whatsapp_error = wa_result.error
+            self.whatsapp_sent = True
+            logger.info(f"SOS WhatsApp Family Alert dispatched with status: {wa_result.status} via {wa_result.provider_name}")
+        except Exception as e:
+            logger.error(f"SOS WhatsApp Family Alert Subsystem Error: {e}")
+            self.last_whatsapp_status = "FAILED"
+            self.last_whatsapp_error = str(e)
+
+        # 5. SMS Notification Subsystem (Backward Compatible)
         try:
             result: NotificationResult = send_emergency_notification(
                 driver=driver,
@@ -271,11 +302,48 @@ class EmergencyCoordinator:
             self.last_notification_status = result.status
             self.last_provider_name = result.provider_name
             self.last_notification_error = result.error
-            logger.info(f"SOS Notification completed with status: {result.status} via {result.provider_name}")
+            logger.info(f"SOS SMS Notification completed with status: {result.status} via {result.provider_name}")
         except Exception as e:
-            logger.error(f"SOS Notification Subsystem Error: {e}")
+            logger.error(f"SOS SMS Notification Subsystem Error: {e}")
             self.last_notification_status = "FAILED"
             self.last_notification_error = str(e)
+
+        # 6. Start Periodic Live Location Tracker (Continuous tracking while emergency remains active)
+        self._start_periodic_location_tracker(driver, vehicle, event_id)
+
+    def _start_periodic_location_tracker(self, driver, vehicle, event_id):
+        """Periodically dispatches live location updates while emergency mode is active."""
+        self._stop_periodic_updates.clear()
+
+        def _tracker_loop():
+            interval = max(10, WHATSAPP_LOCATION_UPDATE_INTERVAL)
+            while self.is_emergency and not self._stop_periodic_updates.is_set():
+                # Sleep in short slices for instant responsiveness to R key reset
+                for _ in range(interval):
+                    if not self.is_emergency or self._stop_periodic_updates.is_set():
+                        return
+                    time.sleep(1.0)
+
+                if not self.is_emergency or self._stop_periodic_updates.is_set():
+                    return
+
+                try:
+                    updated_loc = get_emergency_location()
+                    self.last_location = updated_loc
+                    logger.info(f"Periodic live location update via WhatsApp: {updated_loc.summary()}")
+                    send_whatsapp_family_alert(
+                        driver=driver,
+                        vehicle=vehicle,
+                        location_obj=updated_loc,
+                        photo_path=None,
+                        event_id=event_id,
+                        is_update=True
+                    )
+                except Exception as e:
+                    logger.error(f"Periodic WhatsApp location update error: {e}")
+
+        self._periodic_thread = threading.Thread(target=_tracker_loop, daemon=True)
+        self._periodic_thread.start()
 
     def reset(self, eye_detector):
         """
@@ -283,6 +351,9 @@ class EmergencyCoordinator:
         Guaranteed to not cause immediate alarm restart.
         """
         logger.info("Driver reset triggered (R key). Restoring normal monitoring state.")
+        # Stop background periodic location tracker immediately
+        self._stop_periodic_updates.set()
+
         self.is_emergency = False
         self.hazard_lights = False
         self.countdown_active = False
@@ -293,6 +364,8 @@ class EmergencyCoordinator:
         self.previous_yawn_count = 0
         self.drowsy_logged = False
         self.sos_triggered = False
+        self.whatsapp_sent = False
+        self.last_whatsapp_status = "IDLE"
 
         # Stop alarm sound immediately
         self.alarm.stop()
@@ -322,6 +395,9 @@ class EmergencyCoordinator:
             "alarm_active": self.alarm.is_playing(),
             "notification_status": self.last_notification_status,
             "provider_name": self.last_provider_name,
+            "whatsapp_status": self.last_whatsapp_status,
+            "whatsapp_provider": self.last_whatsapp_provider,
             "photo_status": "Captured" if self.last_photo_path and "failed" not in self.last_photo_path else "None",
-            "last_event_id": self.last_event_id
+            "last_event_id": self.last_event_id,
+            "location_available": getattr(self.last_location, "is_available", False) if self.last_location else False
         }

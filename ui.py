@@ -473,6 +473,7 @@ class SafeDriveDashboard(ctk.CTk):
         self.lbl_alarm_state = self._create_status_row(frame, "Acoustic Warning Siren", "STANDBY", TEXT_SECONDARY)
         self.lbl_hazard_state = self._create_status_row(frame, "Hazard Warning Lights", "OFF", TEXT_SECONDARY)
         self.lbl_photo_state = self._create_status_row(frame, "Incident Snapshot", "READY", TEXT_SECONDARY)
+        self.lbl_whatsapp_state = self._create_status_row(frame, "WhatsApp Family Alert", "STANDBY", TEXT_SECONDARY)
         self.lbl_sms_state = self._create_status_row(frame, "Alert Dispatcher", "Mock SMS (Simulated)", ACCENT_CYAN)
 
     def _create_status_row(self, parent, label, default_value, color=TEXT_PRIMARY):
@@ -807,7 +808,23 @@ class SafeDriveDashboard(ctk.CTk):
         else:
             self.lbl_hazard_state.configure(text="OFF", text_color=TEXT_SECONDARY)
 
+        wa_status = emerg_status.get("whatsapp_status", "IDLE")
+        wa_provider = emerg_status.get("whatsapp_provider", "Mock WhatsApp")
+
         self.lbl_photo_state.configure(text=emerg_status.get("photo_status", "READY"))
+
+        if hasattr(self, "lbl_whatsapp_state"):
+            if wa_status in ("SIMULATED", "SENT"):
+                wa_color = ACCENT_EMERALD
+                wa_short = "SIMULATED" if wa_status == "SIMULATED" else "SENT"
+                self.lbl_whatsapp_state.configure(text=f"{wa_short} ({wa_provider.split()[0]})", text_color=wa_color)
+            elif wa_status == "FAILED":
+                self.lbl_whatsapp_state.configure(text="FAILED", text_color=ACCENT_RED)
+            elif wa_status == "SKIPPED":
+                self.lbl_whatsapp_state.configure(text="SKIPPED", text_color=TEXT_DIM)
+            else:
+                self.lbl_whatsapp_state.configure(text="STANDBY", text_color=TEXT_SECONDARY)
+
         self.lbl_sms_state.configure(
             text=f"{provider}: {notif_status}",
             text_color=ACCENT_EMERALD if notif_status in ("SIMULATED", "SENT") else (ACCENT_RED if notif_status == "FAILED" else TEXT_SECONDARY)
@@ -817,8 +834,9 @@ class SafeDriveDashboard(ctk.CTk):
         if is_emergency:
             self.status_pill.configure(text="🚨 CRITICAL SOS: ACTIVATED", fg_color=ACCENT_RED, text_color="#FFFFFF")
             self.alert_banner.configure(fg_color="#450A0A")
+            disp_info = f"WA: {wa_status}" if wa_status != "IDLE" else f"SMS: {notif_status}"
             self.alert_banner_text.configure(
-                text=f"🚨 [ EMERGENCY ] DRIVER UNRESPONSIVE — SOS DISPATCHED ({notif_status}) — PRESS 'R' TO CANCEL",
+                text=f"🚨 [ EMERGENCY ] DRIVER UNRESPONSIVE — ALERTS DISPATCHED ({disp_info}) — PRESS 'R' TO CANCEL",
                 text_color="#FEF2F2"
             )
             self.lbl_countdown_big.configure(text="00:00 (SOS DISPATCHED)", text_color=ACCENT_RED)

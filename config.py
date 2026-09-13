@@ -49,3 +49,12 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "").strip()
 DEFAULT_EMERGENCY_PHONE = os.getenv("EMERGENCY_PHONE_NUMBER", "").strip()
 
+# WhatsApp Family Alert Configuration (Defaults to mock provider for local development)
+WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+WHATSAPP_PROVIDER = os.getenv("WHATSAPP_PROVIDER", "mock").strip().lower()
+WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN", "").strip()
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+WHATSAPP_RECIPIENT_PHONE = os.getenv("WHATSAPP_RECIPIENT_PHONE", "").strip()
+WHATSAPP_API_VERSION = os.getenv("WHATSAPP_API_VERSION", "v20.0").strip()
+WHATSAPP_LOCATION_UPDATE_INTERVAL = int(os.getenv("WHATSAPP_LOCATION_UPDATE_INTERVAL", "60").strip() or 60)
+
