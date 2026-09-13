@@ -176,6 +176,13 @@ class SafeDriveDashboard(ctk.CTk):
         self.photo_image = None
         self._hazard_flash_state = False
 
+        # Anti-jitter smoothing and hysteresis filters for cockpit gauges
+        self._smooth_ear = None
+        self._smooth_mar = None
+        self._last_rendered_ear = None
+        self._last_rendered_mar = None
+        self._ear_state_hysteresis = "SAFE"
+
         # Build UI
         self._build_header()
         self._build_body()
@@ -353,6 +360,14 @@ class SafeDriveDashboard(ctk.CTk):
             font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
             text_color=ACCENT_CYAN
         ).pack(side="left")
+
+        self.lbl_gauge_summary = ctk.CTkLabel(
+            hdr_row,
+            text="● STABILIZED",
+            font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+            text_color=ACCENT_EMERALD
+        )
+        self.lbl_gauge_summary.pack(side="right")
 
         # 1. EAR Gauge Box
         ear_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
@@ -585,6 +600,11 @@ class SafeDriveDashboard(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_quit_pressed)
 
     def _on_reset_pressed(self):
+        self._smooth_ear = None
+        self._smooth_mar = None
+        self._last_rendered_ear = None
+        self._last_rendered_mar = None
+        self._ear_state_hysteresis = "SAFE"
         if self.on_reset_callback:
             self.on_reset_callback()
 
@@ -642,21 +662,66 @@ class SafeDriveDashboard(ctk.CTk):
         self.fps_badge.configure(text=f"FPS: {fps:.1f}")
 
         # Metrics
-        ear = eye_data.get("ear", 0.0)
-        mar = eye_data.get("mar", 0.0)
+        raw_ear = eye_data.get("ear", 0.0)
+        raw_mar = eye_data.get("mar", 0.0)
         state = eye_data.get("state", "OPEN")
         closed = eye_data.get("closed_frames", 0)
         yawns = eye_data.get("yawns", 0)
         drowsy = eye_data.get("drowsy", False)
 
+        # -------------------------------------------------------------
+        # Anti-Jitter Smoothing & Stabilization (Hysteresis & EMA Filter)
+        # -------------------------------------------------------------
+        # 1. EAR Smoothing with Instant Safety Bypass:
+        if self._smooth_ear is None:
+            self._smooth_ear = raw_ear
+        else:
+            # If driver closes eyes or large deviation occurs, bypass filter for immediate alarm response:
+            if raw_ear < EAR_THRESHOLD or abs(raw_ear - self._smooth_ear) > 0.08:
+                self._smooth_ear = raw_ear
+            else:
+                # Silky EMA low-pass filter (alpha = 0.12) absorbs webcam noise:
+                self._smooth_ear = 0.12 * raw_ear + 0.88 * self._smooth_ear
+
+        # 2. MAR Smoothing with Lip Resting Suppression:
+        # Suppress resting micro-tremors below 0.06 to rock-solid 0.00:
+        cleaned_mar = 0.0 if raw_mar < 0.06 else raw_mar
+        if self._smooth_mar is None:
+            self._smooth_mar = cleaned_mar
+        else:
+            if cleaned_mar >= MAR_THRESHOLD or abs(cleaned_mar - self._smooth_mar) > 0.12:
+                self._smooth_mar = cleaned_mar
+            else:
+                self._smooth_mar = 0.12 * cleaned_mar + 0.88 * self._smooth_mar
+
+        disp_ear = round(self._smooth_ear, 2)
+        disp_mar = round(self._smooth_mar, 2)
+
+        # Schmitt-trigger Hysteresis to eliminate boundary color flickering:
+        if self._smooth_ear < EAR_THRESHOLD:
+            self._ear_state_hysteresis = "CRITICAL"
+        elif self._ear_state_hysteresis == "CRITICAL":
+            if self._smooth_ear >= EAR_THRESHOLD + 0.02:
+                self._ear_state_hysteresis = "SAFE"
+        elif self._ear_state_hysteresis == "SAFE":
+            if self._smooth_ear < 0.245:
+                self._ear_state_hysteresis = "WARNING"
+        elif self._ear_state_hysteresis == "WARNING":
+            if self._smooth_ear >= 0.265:
+                self._ear_state_hysteresis = "SAFE"
+
         # 1. EAR Gauge
-        self.lbl_ear_val.configure(text=f"{ear:.2f}")
-        ear_norm = min(1.0, max(0.0, ear / 0.40))
+        if self._last_rendered_ear != disp_ear:
+            self.lbl_ear_val.configure(text=f"{disp_ear:.2f}")
+            self._last_rendered_ear = disp_ear
+
+        ear_norm = min(1.0, max(0.0, disp_ear / 0.40))
         self.bar_ear.set(ear_norm)
-        if ear < EAR_THRESHOLD:
+
+        if self._ear_state_hysteresis == "CRITICAL" or raw_ear < EAR_THRESHOLD:
             self.bar_ear.configure(progress_color=ACCENT_RED)
             self.lbl_ear_sub.configure(text=f"CRITICAL: <{EAR_THRESHOLD} | State: {state}", text_color=ACCENT_RED)
-        elif ear < 0.26:
+        elif self._ear_state_hysteresis == "WARNING":
             self.bar_ear.configure(progress_color=ACCENT_AMBER)
             self.lbl_ear_sub.configure(text=f"WARNING: Approaching {EAR_THRESHOLD} | {state}", text_color=ACCENT_AMBER)
         else:
@@ -664,18 +729,30 @@ class SafeDriveDashboard(ctk.CTk):
             self.lbl_ear_sub.configure(text=f"Safe: >{EAR_THRESHOLD} | State: {state}", text_color=TEXT_DIM)
 
         # 2. MAR Gauge
-        self.lbl_mar_val.configure(text=f"{mar:.2f}")
-        mar_norm = min(1.0, max(0.0, mar / 0.80))
+        if self._last_rendered_mar != disp_mar:
+            self.lbl_mar_val.configure(text=f"{disp_mar:.2f}")
+            self._last_rendered_mar = disp_mar
+
+        mar_norm = min(1.0, max(0.0, disp_mar / 0.80))
         self.bar_mar.set(mar_norm)
-        if mar >= MAR_THRESHOLD:
+
+        if disp_mar >= MAR_THRESHOLD or raw_mar >= MAR_THRESHOLD:
             self.bar_mar.configure(progress_color=ACCENT_RED)
             self.lbl_mar_sub.configure(text=f"YAWNING DETECTED: >={MAR_THRESHOLD}", text_color=ACCENT_RED)
-        elif mar >= 0.35:
+        elif disp_mar >= 0.35:
             self.bar_mar.configure(progress_color=ACCENT_AMBER)
             self.lbl_mar_sub.configure(text=f"Mouth Open: Approaching {MAR_THRESHOLD}", text_color=ACCENT_AMBER)
         else:
             self.bar_mar.configure(progress_color=ACCENT_CYAN)
             self.lbl_mar_sub.configure(text=f"Nominal: <{MAR_THRESHOLD}", text_color=TEXT_DIM)
+
+        # Summary chip in card header
+        if self._ear_state_hysteresis == "CRITICAL" or raw_ear < EAR_THRESHOLD:
+            self.lbl_gauge_summary.configure(text="● CRITICAL", text_color=ACCENT_RED)
+        elif self._ear_state_hysteresis == "WARNING" or disp_mar >= 0.35:
+            self.lbl_gauge_summary.configure(text="▲ ATTENTION", text_color=ACCENT_AMBER)
+        else:
+            self.lbl_gauge_summary.configure(text="● OPTIMAL", text_color=ACCENT_EMERALD)
 
         # 3. Microsleep Buffer
         self.lbl_closed_frames.configure(text=f"{closed} / 45 f")
