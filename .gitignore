@@ -1,13 +1,30 @@
+# Virtual Environments
 venv/
-__pycache__/
-*.pyc
+env/
+ENV/
 
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Runtime Logs and Temporary Files
 logs/
 screenshots/
+*.log
 
+# IDE & Editors
 .vscode/
 .idea/
+*.swp
 
+# OS Files
 .DS_Store
+Thumbs.db
 
-*.log
+# Secrets & Environment Variables
+.env
+
+# Database & Sensitive Media Captures
+safedrive.db
+emergency_captures/
