@@ -159,10 +159,14 @@ class SafeDriveDashboard(ctk.CTk):
         self.driver_data = get_driver(driver_id) or {"name": "Primary Driver", "phone": "N/A"}
         self.vehicle_data = get_vehicle(vehicle_id) or {"vehicle_number": "MH-08-AB-1234", "vehicle_type": "Car"}
 
-        # Window Setup
+        # Responsive Window Setup
         self.title(f"{APP_NAME} - Advanced Driver Safety Dashboard v{APP_VERSION}")
-        self.geometry("1380x880")
-        self.minsize(1100, 750)
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        win_w = min(1280, max(1040, int(screen_w * 0.88)))
+        win_h = min(820, max(680, int(screen_h * 0.84)))
+        self.geometry(f"{win_w}x{win_h}")
+        self.minsize(980, 640)
         self.configure(fg_color=BG_MAIN)
 
         # State tracking
@@ -480,17 +484,26 @@ class SafeDriveDashboard(ctk.CTk):
         EventHistoryDialog(self)
 
     def update_frame(self, frame):
-        """Updates the video feed canvas smoothly with a new OpenCV frame."""
+        """Updates the video feed canvas smoothly with a new OpenCV frame, dynamically fitted to available bounds."""
         if frame is None or not self.winfo_exists():
             return
 
         try:
-            # Resize frame to fit canvas
-            h, w, _ = frame.shape
-            target_w = 800
-            target_h = int(h * (target_w / max(w, 1)))
+            # Measure actual container space in left panel
+            lbl_w = self.video_label.winfo_width()
+            lbl_h = self.video_label.winfo_height()
 
-            resized = cv2.resize(frame, (target_w, target_h))
+            # Fallback if window not yet rendered
+            if lbl_w < 100 or lbl_h < 100:
+                lbl_w = 640
+                lbl_h = 420
+
+            h, w, _ = frame.shape
+            scale = min((lbl_w - 8) / max(w, 1), (lbl_h - 8) / max(h, 1))
+            target_w = max(int(w * scale), 10)
+            target_h = max(int(h * scale), 10)
+
+            resized = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_AREA)
             rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb)
             self.photo_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(target_w, target_h))

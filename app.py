@@ -5,8 +5,9 @@ Main Application Entry Point.
 import sys
 import time
 import argparse
+import socket
 import threading
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import cv2
 
@@ -34,10 +35,29 @@ from database import (
 from ui import SafeDriveDashboard
 
 
+# Global single-instance guard socket
+_INSTANCE_LOCK_SOCKET = None
+
+
+def acquire_single_instance_lock(port: int = 49152) -> bool:
+    """Ensures only one instance of SafeDrive AI can run concurrently on this computer."""
+    global _INSTANCE_LOCK_SOCKET
+    try:
+        _INSTANCE_LOCK_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _INSTANCE_LOCK_SOCKET.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        logger.error(
+            "Another instance of SafeDrive AI is already running! "
+            "Please close the existing window before launching a new one."
+        )
+        return False
+
+
 def open_camera(camera_index: int = CAMERA_INDEX) -> Optional[cv2.VideoCapture]:
     """
-    Safely opens webcam with DirectShow on Windows, with fallback to standard index.
-    Returns cv2.VideoCapture object or None if no camera is available.
+    Safely opens webcam with DirectShow on Windows, configuring low latency buffer
+    and MJPG compression for fluid 30 FPS capture.
     """
     logger.info(f"Attempting to initialize webcam index {camera_index}...")
     try:
@@ -47,9 +67,13 @@ def open_camera(camera_index: int = CAMERA_INDEX) -> Optional[cv2.VideoCapture]:
             camera = cv2.VideoCapture(camera_index)
 
         if camera.isOpened():
+            # Configure webcam for fluid 30 FPS performance
+            camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
             camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-            logger.info("Webcam successfully initialized.")
+            camera.set(cv2.CAP_PROP_FPS, 30)
+            logger.info(f"Webcam successfully initialized at {CAMERA_WIDTH}x{CAMERA_HEIGHT}.")
             return camera
         else:
             logger.error(f"Could not open webcam index {camera_index}.")
@@ -57,6 +81,93 @@ def open_camera(camera_index: int = CAMERA_INDEX) -> Optional[cv2.VideoCapture]:
     except Exception as e:
         logger.error(f"Error accessing webcam: {e}")
         return None
+
+
+class CameraWorker(threading.Thread):
+    """
+    Dedicated background worker thread for high-FPS camera capture and AI vision analysis.
+    Decouples computer-vision processing from the Tkinter GUI thread to prevent lag.
+    """
+
+    def __init__(
+        self,
+        camera: Optional[cv2.VideoCapture],
+        detector: FaceDetector,
+        eye_detector: EyeDetector,
+        coordinator: EmergencyCoordinator,
+        driver_id: Optional[int],
+        vehicle_id: Optional[int],
+        driver_profile: Optional[Dict[str, Any]],
+        vehicle_profile: Optional[Dict[str, Any]]
+    ):
+        super().__init__(daemon=True)
+        self.camera = camera
+        self.detector = detector
+        self.eye_detector = eye_detector
+        self.coordinator = coordinator
+        self.driver_id = driver_id
+        self.vehicle_id = vehicle_id
+        self.driver_profile = driver_profile
+        self.vehicle_profile = vehicle_profile
+
+        self.running = True
+        self.lock = threading.Lock()
+        self.latest_frame = None
+        self.latest_eye_data = {
+            "ear": 0.0,
+            "mar": 0.0,
+            "state": "NO FACE",
+            "closed_frames": 0,
+            "drowsy": False,
+            "yawns": 0
+        }
+        self.latest_fps = 0.0
+
+    def run(self):
+        prev_time = time.time()
+
+        while self.running:
+            if not self.camera or not self.camera.isOpened():
+                time.sleep(0.05)
+                continue
+
+            success, frame = self.camera.read()
+            if not success or frame is None:
+                time.sleep(0.01)
+                continue
+
+            frame = cv2.flip(frame, 1)
+
+            # Computer Vision Pipeline (Eye + Mouth Landmarks)
+            frame, face_landmarks = self.detector.detect(frame)
+            frame, eye_data = self.eye_detector.process(frame, face_landmarks)
+
+            # FPS calculation
+            curr_time = time.time()
+            fps = 1.0 / max(curr_time - prev_time, 0.001)
+            prev_time = curr_time
+
+            # Safety Coordinator update
+            self.coordinator.update(
+                eye_data=eye_data,
+                frame=frame,
+                driver_id=self.driver_id,
+                vehicle_id=self.vehicle_id,
+                driver=self.driver_profile,
+                vehicle=self.vehicle_profile
+            )
+
+            # Store latest telemetry under lock
+            with self.lock:
+                self.latest_frame = frame
+                self.latest_eye_data = eye_data
+                self.latest_fps = fps
+
+            # Small sleep to yield CPU
+            time.sleep(0.005)
+
+    def stop(self):
+        self.running = False
 
 
 class SafeDriveApplication:
@@ -70,7 +181,7 @@ class SafeDriveApplication:
         initialize_database()
         self.driver_id, self.vehicle_id = get_default_profile()
 
-        # If no profile exists yet, seed initial default profile
+        # Seed default profile if database was empty
         if not self.driver_id or not self.vehicle_id:
             logger.info("No active driver profile found in database. Creating default driver profile...")
             self.driver_id = add_driver(
@@ -100,6 +211,18 @@ class SafeDriveApplication:
         # Camera
         self.camera = open_camera(self.camera_index)
 
+        # Background Worker Thread for capture & CV
+        self.worker = CameraWorker(
+            camera=self.camera,
+            detector=self.detector,
+            eye_detector=self.eye_detector,
+            coordinator=self.coordinator,
+            driver_id=self.driver_id,
+            vehicle_id=self.vehicle_id,
+            driver_profile=self.driver_profile,
+            vehicle_profile=self.vehicle_profile
+        )
+
         # Dashboard UI
         self.dashboard = SafeDriveDashboard(
             on_reset_callback=self.on_reset,
@@ -107,9 +230,6 @@ class SafeDriveApplication:
             driver_id=self.driver_id,
             vehicle_id=self.vehicle_id
         )
-
-        self.previous_time = time.time()
-        self.camera_thread: Optional[threading.Thread] = None
 
     def on_reset(self):
         """User triggered reset via UI button or R key."""
@@ -119,6 +239,8 @@ class SafeDriveApplication:
         """Clean shutdown of monitoring threads, camera, and audio."""
         logger.info("Shutdown initiated by user.")
         self.running = False
+        if self.worker:
+            self.worker.stop()
         if self.alarm:
             self.alarm.stop()
         if self.camera and self.camera.isOpened():
@@ -131,62 +253,53 @@ class SafeDriveApplication:
 
         if not self.camera or not self.camera.isOpened():
             logger.warning("Camera not available. Dashboard will display standby state.")
-            # Set notification on UI that camera is disconnected
             if hasattr(self.dashboard, "video_label"):
                 self.dashboard.video_label.configure(
                     text="⚠️ WEBCAM DISCONNECTED OR IN USE\nPlease connect a camera and restart the application."
                 )
+        else:
+            # Start background vision worker
+            self.worker.start()
 
-        # Launch processing loop via Tkinter scheduler
+        # Launch UI scheduler
         self._schedule_frame_update()
         self.dashboard.mainloop()
 
     def _schedule_frame_update(self):
-        """Periodic tick reading camera, calculating telemetry, and updating dashboard."""
+        """Periodic UI tick pulling latest processed frame and telemetry without blocking."""
         if not self.running:
             return
 
-        if self.camera and self.camera.isOpened():
-            success, frame = self.camera.read()
+        frame = None
+        eye_data = None
+        fps = 0.0
 
-            if success and frame is not None:
-                frame = cv2.flip(frame, 1)
+        if self.worker and self.worker.is_alive():
+            with self.worker.lock:
+                if self.worker.latest_frame is not None:
+                    frame = self.worker.latest_frame.copy()
+                    eye_data = self.worker.latest_eye_data
+                    fps = self.worker.latest_fps
 
-                # Computer Vision Pipeline (Preserving existing verified mesh)
-                frame, face_landmarks = self.detector.detect(frame)
-                frame, eye_data = self.eye_detector.process(frame, face_landmarks)
+        if frame is not None and eye_data is not None:
+            emerg_status = self.coordinator.get_status_summary()
+            loc = location_provider.get_cached_location()
 
-                # Calculate FPS
-                curr_time = time.time()
-                fps = 1.0 / max(curr_time - self.previous_time, 0.001)
-                self.previous_time = curr_time
+            self.dashboard.update_frame(frame)
+            self.dashboard.update_telemetry(fps, eye_data, emerg_status, loc)
 
-                # Safety & Emergency Orchestration
-                self.coordinator.update(
-                    eye_data=eye_data,
-                    frame=frame,
-                    driver_id=self.driver_id,
-                    vehicle_id=self.vehicle_id,
-                    driver=self.driver_profile,
-                    vehicle=self.vehicle_profile
-                )
-
-                # Fetch Status & Location
-                emerg_status = self.coordinator.get_status_summary()
-                loc = location_provider.get_cached_location()
-
-                # Push to UI
-                self.dashboard.update_frame(frame)
-                self.dashboard.update_telemetry(fps, eye_data, emerg_status, loc)
-
-        # Schedule next iteration (approx 30 FPS tick)
-        self.dashboard.after(10, self._schedule_frame_update)
+        # Schedule next UI tick (~30-50 FPS refresh)
+        self.dashboard.after(20, self._schedule_frame_update)
 
 
 def main():
     parser = argparse.ArgumentParser(description=f"{APP_NAME} - AI Driver Safety Monitoring")
     parser.add_argument("--camera", type=int, default=CAMERA_INDEX, help="Camera device index (default: 0)")
     args = parser.parse_args()
+
+    # Guard against accidental multiple instances
+    if not acquire_single_instance_lock():
+        sys.exit(1)
 
     app = SafeDriveApplication(camera_index=args.camera)
     app.run()

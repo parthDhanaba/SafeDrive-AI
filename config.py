@@ -34,8 +34,8 @@ RESPONSE_TIMEOUT_SECONDS = 10     # Driver acknowledgement timeout before SOS ac
 
 # Camera and Window Configuration
 CAMERA_INDEX = 0
-CAMERA_WIDTH = 1280
-CAMERA_HEIGHT = 720
+CAMERA_WIDTH = 640
+CAMERA_HEIGHT = 480
 WINDOW_NAME = "SafeDrive AI - Driver Safety System"
 
 # Application Metadata
