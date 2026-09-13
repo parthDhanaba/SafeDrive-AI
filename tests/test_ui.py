@@ -37,11 +37,12 @@ class TestUISubsystem(unittest.TestCase):
         app.update_telemetry(fps=30.0, eye_data=eye_data, emerg_status=emerg_status, location_obj=loc)
         app.update()
 
-        # Check widget values
-        self.assertEqual(app.val_ear.cget("text"), "0.29")
-        self.assertEqual(app.val_mar.cget("text"), "0.15")
-        self.assertIn("OPEN", app.val_closed.cget("text"))
-        self.assertIn("1 / 3", app.val_yawns.cget("text"))
+        # Check widget values & progress bars
+        self.assertEqual(app.lbl_ear_val.cget("text"), "0.29")
+        self.assertEqual(app.lbl_mar_val.cget("text"), "0.15")
+        self.assertIn("OPEN", app.lbl_ear_sub.cget("text"))
+        self.assertGreater(app.bar_ear.get(), 0.0)
+        self.assertGreater(app.bar_mar.get(), 0.0)
 
         # Clean destroy
         app.destroy()
