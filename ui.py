@@ -300,6 +300,7 @@ class SafeDriveDashboard(ctk.CTk):
         # Video Frame Container
         self.video_container = ctk.CTkFrame(self.left_panel, fg_color="#020408", corner_radius=8)
         self.video_container.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        self.video_container.pack_propagate(False)
 
         self.video_label = ctk.CTkLabel(
             self.video_container,
@@ -321,17 +322,18 @@ class SafeDriveDashboard(ctk.CTk):
         self.alert_banner_text.pack(pady=8)
 
         # -------------------------------------------------------------
-        # Right Panel: Cockpit Telemetry Sidebar
+        # Right Panel: Fixed Rock-Solid Cockpit Telemetry Sidebar (Non-scrolling)
         # -------------------------------------------------------------
-        self.right_panel = ctk.CTkScrollableFrame(
+        self.right_panel = ctk.CTkFrame(
             self.body_frame,
             fg_color=CARD_BG,
             corner_radius=12,
             border_color=CARD_BORDER,
             border_width=1,
-            width=390
+            width=380
         )
         self.right_panel.pack(side="right", fill="both", expand=False, padx=(8, 0))
+        self.right_panel.pack_propagate(False)
 
         self._build_safety_gauges()
         self._build_emergency_console()
@@ -341,10 +343,10 @@ class SafeDriveDashboard(ctk.CTk):
     def _build_safety_gauges(self):
         """Realistic dynamic visual gauges for EAR, MAR, and Yawn counts."""
         frame = ctk.CTkFrame(self.right_panel, fg_color=CARD_SURFACE, corner_radius=10, border_color=CARD_BORDER, border_width=1)
-        frame.pack(fill="x", padx=8, pady=(8, 6))
+        frame.pack(fill="x", padx=8, pady=(6, 4))
 
         hdr_row = ctk.CTkFrame(frame, fg_color="transparent")
-        hdr_row.pack(fill="x", padx=12, pady=(8, 4))
+        hdr_row.pack(fill="x", padx=10, pady=(6, 2))
         ctk.CTkLabel(
             hdr_row,
             text="DRIVER ATTENTION GAUGES",
@@ -353,82 +355,82 @@ class SafeDriveDashboard(ctk.CTk):
         ).pack(side="left")
 
         # 1. EAR Gauge Box
-        ear_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=8, border_color=CARD_BORDER, border_width=1)
-        ear_box.pack(fill="x", padx=10, pady=4)
+        ear_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
+        ear_box.pack(fill="x", padx=8, pady=2)
 
         ear_hdr = ctk.CTkFrame(ear_box, fg_color="transparent")
-        ear_hdr.pack(fill="x", padx=10, pady=(6, 0))
+        ear_hdr.pack(fill="x", padx=8, pady=(4, 0))
         ctk.CTkLabel(ear_hdr, text="EYE ASPECT RATIO (EAR)", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=TEXT_SECONDARY).pack(side="left")
-        self.lbl_ear_val = ctk.CTkLabel(ear_hdr, text="0.00", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), text_color=TEXT_PRIMARY)
+        self.lbl_ear_val = ctk.CTkLabel(ear_hdr, text="0.00", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), text_color=TEXT_PRIMARY)
         self.lbl_ear_val.pack(side="right")
 
-        self.bar_ear = ctk.CTkProgressBar(ear_box, height=8, corner_radius=4, fg_color="#1A2438", progress_color=ACCENT_EMERALD)
-        self.bar_ear.pack(fill="x", padx=10, pady=(4, 2))
+        self.bar_ear = ctk.CTkProgressBar(ear_box, height=6, corner_radius=3, fg_color="#1A2438", progress_color=ACCENT_EMERALD)
+        self.bar_ear.pack(fill="x", padx=8, pady=(2, 2))
         self.bar_ear.set(0.7)
 
         self.lbl_ear_sub = ctk.CTkLabel(ear_box, text=f"Threshold: {EAR_THRESHOLD} | State: OPEN", font=ctk.CTkFont(family="Segoe UI", size=9), text_color=TEXT_DIM)
-        self.lbl_ear_sub.pack(anchor="w", padx=10, pady=(0, 6))
+        self.lbl_ear_sub.pack(anchor="w", padx=8, pady=(0, 4))
 
         # 2. MAR Gauge Box
-        mar_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=8, border_color=CARD_BORDER, border_width=1)
-        mar_box.pack(fill="x", padx=10, pady=4)
+        mar_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
+        mar_box.pack(fill="x", padx=8, pady=2)
 
         mar_hdr = ctk.CTkFrame(mar_box, fg_color="transparent")
-        mar_hdr.pack(fill="x", padx=10, pady=(6, 0))
+        mar_hdr.pack(fill="x", padx=8, pady=(4, 0))
         ctk.CTkLabel(mar_hdr, text="MOUTH ASPECT RATIO (MAR)", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=TEXT_SECONDARY).pack(side="left")
-        self.lbl_mar_val = ctk.CTkLabel(mar_hdr, text="0.00", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), text_color=TEXT_PRIMARY)
+        self.lbl_mar_val = ctk.CTkLabel(mar_hdr, text="0.00", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), text_color=TEXT_PRIMARY)
         self.lbl_mar_val.pack(side="right")
 
-        self.bar_mar = ctk.CTkProgressBar(mar_box, height=8, corner_radius=4, fg_color="#1A2438", progress_color=ACCENT_CYAN)
-        self.bar_mar.pack(fill="x", padx=10, pady=(4, 2))
+        self.bar_mar = ctk.CTkProgressBar(mar_box, height=6, corner_radius=3, fg_color="#1A2438", progress_color=ACCENT_CYAN)
+        self.bar_mar.pack(fill="x", padx=8, pady=(2, 2))
         self.bar_mar.set(0.2)
 
         self.lbl_mar_sub = ctk.CTkLabel(mar_box, text=f"Threshold: {MAR_THRESHOLD} | Status: Nominal", font=ctk.CTkFont(family="Segoe UI", size=9), text_color=TEXT_DIM)
-        self.lbl_mar_sub.pack(anchor="w", padx=10, pady=(0, 6))
+        self.lbl_mar_sub.pack(anchor="w", padx=8, pady=(0, 4))
 
         # Compatibility aliases for tests & inspectors
         self.val_ear = self.lbl_ear_val
         self.val_mar = self.lbl_mar_val
 
         # 3. Microsleep Buffer (Closed Frames)
-        closure_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=8, border_color=CARD_BORDER, border_width=1)
-        closure_box.pack(fill="x", padx=10, pady=4)
+        closure_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
+        closure_box.pack(fill="x", padx=8, pady=2)
 
         closure_hdr = ctk.CTkFrame(closure_box, fg_color="transparent")
-        closure_hdr.pack(fill="x", padx=10, pady=(6, 0))
+        closure_hdr.pack(fill="x", padx=8, pady=(4, 0))
         ctk.CTkLabel(closure_hdr, text="MICROSLEEP EYE CLOSURE", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=TEXT_SECONDARY).pack(side="left")
-        self.lbl_closed_frames = ctk.CTkLabel(closure_hdr, text="0 / 45 f", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), text_color=TEXT_PRIMARY)
+        self.lbl_closed_frames = ctk.CTkLabel(closure_hdr, text="0 / 45 f", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color=TEXT_PRIMARY)
         self.lbl_closed_frames.pack(side="right")
 
-        self.bar_closed = ctk.CTkProgressBar(closure_box, height=8, corner_radius=4, fg_color="#1A2438", progress_color=ACCENT_RED)
-        self.bar_closed.pack(fill="x", padx=10, pady=(4, 6))
+        self.bar_closed = ctk.CTkProgressBar(closure_box, height=6, corner_radius=3, fg_color="#1A2438", progress_color=ACCENT_RED)
+        self.bar_closed.pack(fill="x", padx=8, pady=(2, 4))
         self.bar_closed.set(0.0)
 
         # 4. Yawn Counter Segments
-        yawn_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=8, border_color=CARD_BORDER, border_width=1)
-        yawn_box.pack(fill="x", padx=10, pady=(4, 8))
-
-        ctk.CTkLabel(yawn_box, text="FATIGUE YAWN COUNTER", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=10, pady=(6, 4))
+        yawn_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
+        yawn_box.pack(fill="x", padx=8, pady=(2, 6))
 
         seg_frame = ctk.CTkFrame(yawn_box, fg_color="transparent")
-        seg_frame.pack(fill="x", padx=10, pady=(0, 6))
+        seg_frame.pack(fill="x", padx=8, pady=4)
 
-        self.seg1 = ctk.CTkLabel(seg_frame, text="YAWN 1", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), fg_color="#1E293B", text_color=TEXT_DIM, corner_radius=4, width=65, height=22)
+        ctk.CTkLabel(seg_frame, text="YAWNS:", font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"), text_color=TEXT_SECONDARY).pack(side="left", padx=(0, 6))
+
+        self.seg1 = ctk.CTkLabel(seg_frame, text="YAWN 1", font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"), fg_color="#1E293B", text_color=TEXT_DIM, corner_radius=4, width=58, height=20)
         self.seg1.pack(side="left", padx=2, expand=True, fill="x")
 
-        self.seg2 = ctk.CTkLabel(seg_frame, text="YAWN 2", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), fg_color="#1E293B", text_color=TEXT_DIM, corner_radius=4, width=65, height=22)
+        self.seg2 = ctk.CTkLabel(seg_frame, text="YAWN 2", font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"), fg_color="#1E293B", text_color=TEXT_DIM, corner_radius=4, width=58, height=20)
         self.seg2.pack(side="left", padx=2, expand=True, fill="x")
 
-        self.seg3 = ctk.CTkLabel(seg_frame, text="DANGER", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), fg_color="#1E293B", text_color=TEXT_DIM, corner_radius=4, width=65, height=22)
+        self.seg3 = ctk.CTkLabel(seg_frame, text="DANGER", font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"), fg_color="#1E293B", text_color=TEXT_DIM, corner_radius=4, width=58, height=20)
         self.seg3.pack(side="left", padx=2, expand=True, fill="x")
 
     def _build_emergency_console(self):
         """Emergency, countdown, and subsystem status card."""
         frame = ctk.CTkFrame(self.right_panel, fg_color=CARD_SURFACE, corner_radius=10, border_color=CARD_BORDER, border_width=1)
-        frame.pack(fill="x", padx=8, pady=6)
+        frame.pack(fill="x", padx=8, pady=4)
 
         hdr_row = ctk.CTkFrame(frame, fg_color="transparent")
-        hdr_row.pack(fill="x", padx=12, pady=(8, 4))
+        hdr_row.pack(fill="x", padx=10, pady=(6, 2))
         ctk.CTkLabel(
             hdr_row,
             text="EMERGENCY SOS SUBSYSTEM",
@@ -437,18 +439,20 @@ class SafeDriveDashboard(ctk.CTk):
         ).pack(side="left")
 
         # Digital Countdown Display Box
-        cd_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=8, border_color=CARD_BORDER, border_width=1)
-        cd_box.pack(fill="x", padx=10, pady=4)
+        cd_box = ctk.CTkFrame(frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
+        cd_box.pack(fill="x", padx=8, pady=2)
 
-        ctk.CTkLabel(cd_box, text="DRIVER RESPONSE TIMER", font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"), text_color=TEXT_SECONDARY).pack(anchor="w", padx=10, pady=(6, 0))
+        cd_hdr = ctk.CTkFrame(cd_box, fg_color="transparent")
+        cd_hdr.pack(fill="x", padx=8, pady=3)
 
+        ctk.CTkLabel(cd_hdr, text="DRIVER RESPONSE TIMER:", font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"), text_color=TEXT_SECONDARY).pack(side="left")
         self.lbl_countdown_big = ctk.CTkLabel(
-            cd_box,
+            cd_hdr,
             text="STANDBY (10s)",
-            font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
             text_color=TEXT_DIM
         )
-        self.lbl_countdown_big.pack(pady=(2, 6))
+        self.lbl_countdown_big.pack(side="right")
 
         # Subsystem rows
         self.lbl_alarm_state = self._create_status_row(frame, "Acoustic Warning Siren", "STANDBY", TEXT_SECONDARY)
@@ -458,20 +462,20 @@ class SafeDriveDashboard(ctk.CTk):
 
     def _create_status_row(self, parent, label, default_value, color=TEXT_PRIMARY):
         row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", padx=10, pady=2)
+        row.pack(fill="x", padx=8, pady=1)
 
         ctk.CTkLabel(row, text=label, font=ctk.CTkFont(family="Segoe UI", size=10), text_color=TEXT_SECONDARY).pack(side="left")
-        val_lbl = ctk.CTkLabel(row, text=default_value, font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=color)
+        val_lbl = ctk.CTkLabel(row, text=default_value, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=color)
         val_lbl.pack(side="right")
         return val_lbl
 
     def _build_location_card(self):
         """Satellite GPS positioning card."""
         frame = ctk.CTkFrame(self.right_panel, fg_color=CARD_SURFACE, corner_radius=10, border_color=CARD_BORDER, border_width=1)
-        frame.pack(fill="x", padx=8, pady=6)
+        frame.pack(fill="x", padx=8, pady=4)
 
         hdr_row = ctk.CTkFrame(frame, fg_color="transparent")
-        hdr_row.pack(fill="x", padx=12, pady=(8, 4))
+        hdr_row.pack(fill="x", padx=10, pady=(6, 2))
         ctk.CTkLabel(
             hdr_row,
             text="SATELLITE POSITIONING (DEVICE GPS)",
@@ -480,37 +484,57 @@ class SafeDriveDashboard(ctk.CTk):
         ).pack(side="left")
 
         self.lbl_gps_coords = self._create_status_row(frame, "Fix Coordinates", "Acquiring...", TEXT_SECONDARY)
-        self.lbl_gps_accuracy = self._create_status_row(frame, "Horizontal Accuracy", "--", TEXT_DIM)
+        self.lbl_gps_accuracy = self._create_status_row(frame, "Accuracy", "--", TEXT_DIM)
 
         self.btn_maps = ctk.CTkButton(
             frame,
             text="🌐  Launch Satellite Maps",
-            font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
             fg_color="#1E293B",
             hover_color="#334155",
             command=self._open_maps_url,
-            height=30
+            height=24
         )
-        self.btn_maps.pack(fill="x", padx=10, pady=(6, 8))
+        self.btn_maps.pack(fill="x", padx=8, pady=(4, 6))
 
     def _build_flight_stats(self):
-        """Flight recorder stats summary."""
+        """Flight recorder stats summary in a single clean horizontal card."""
         frame = ctk.CTkFrame(self.right_panel, fg_color=CARD_SURFACE, corner_radius=10, border_color=CARD_BORDER, border_width=1)
-        frame.pack(fill="x", padx=8, pady=(6, 10))
+        frame.pack(fill="x", padx=8, pady=(4, 6))
 
         hdr_row = ctk.CTkFrame(frame, fg_color="transparent")
-        hdr_row.pack(fill="x", padx=12, pady=(8, 4))
+        hdr_row.pack(fill="x", padx=10, pady=(4, 2))
         ctk.CTkLabel(
             hdr_row,
-            text="SESSION FLIGHT AUDIT STATS",
-            font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+            text="SESSION AUDIT STATS",
+            font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
             text_color=TEXT_SECONDARY
         ).pack(side="left")
 
         stats = get_event_statistics()
-        self.lbl_stat_yawns = self._create_status_row(frame, "Total Yawn Triggers", str(stats.get("total_yawns", 0)))
-        self.lbl_stat_drowsy = self._create_status_row(frame, "Microsleep Events", str(stats.get("drowsiness_events", 0)))
-        self.lbl_stat_emerg = self._create_status_row(frame, "Emergency SOS Activations", str(stats.get("emergency_events", 0)))
+        tri_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        tri_frame.pack(fill="x", padx=6, pady=(0, 6))
+
+        # Yawn stat pill
+        p1 = ctk.CTkFrame(tri_frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
+        p1.pack(side="left", expand=True, fill="x", padx=2)
+        ctk.CTkLabel(p1, text="YAWNS", font=ctk.CTkFont(family="Segoe UI", size=8, weight="bold"), text_color=TEXT_DIM).pack(pady=(2, 0))
+        self.lbl_stat_yawns = ctk.CTkLabel(p1, text=str(stats.get("total_yawns", 0)), font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color=TEXT_PRIMARY)
+        self.lbl_stat_yawns.pack(pady=(0, 2))
+
+        # Drowsy stat pill
+        p2 = ctk.CTkFrame(tri_frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
+        p2.pack(side="left", expand=True, fill="x", padx=2)
+        ctk.CTkLabel(p2, text="DROWSY", font=ctk.CTkFont(family="Segoe UI", size=8, weight="bold"), text_color=TEXT_DIM).pack(pady=(2, 0))
+        self.lbl_stat_drowsy = ctk.CTkLabel(p2, text=str(stats.get("drowsiness_events", 0)), font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color=TEXT_PRIMARY)
+        self.lbl_stat_drowsy.pack(pady=(0, 2))
+
+        # Emergency stat pill
+        p3 = ctk.CTkFrame(tri_frame, fg_color=CARD_BG, corner_radius=6, border_color=CARD_BORDER, border_width=1)
+        p3.pack(side="left", expand=True, fill="x", padx=2)
+        ctk.CTkLabel(p3, text="SOS", font=ctk.CTkFont(family="Segoe UI", size=8, weight="bold"), text_color=TEXT_DIM).pack(pady=(2, 0))
+        self.lbl_stat_emerg = ctk.CTkLabel(p3, text=str(stats.get("emergency_events", 0)), font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color=ACCENT_RED)
+        self.lbl_stat_emerg.pack(pady=(0, 2))
 
     def _build_controls(self):
         """Bottom tactical action bar."""
