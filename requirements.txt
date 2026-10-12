@@ -8,3 +8,8 @@ Pillow>=10.0.0
 customtkinter>=6.0.0
 requests>=2.31.0
 twilio>=8.0.0
+
+# Deep Learning AI Model Inference Engine
+torch>=2.1.0
+keras>=3.0.0
+pyfive>=1.2.0

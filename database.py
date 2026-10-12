@@ -84,6 +84,8 @@ def initialize_database():
                 sos_sent INTEGER DEFAULT 0,
                 photo_path TEXT,
                 notification_status TEXT DEFAULT 'NONE',
+                eye_open_prob REAL,
+                yawn_prob REAL,
                 timestamp TEXT NOT NULL,
                 FOREIGN KEY (driver_id) REFERENCES drivers(id),
                 FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
@@ -119,7 +121,9 @@ def initialize_database():
         _migrate_table_columns(conn, "safety_events", {
             "location_accuracy": "REAL",
             "photo_path": "TEXT",
-            "notification_status": "TEXT DEFAULT 'NONE'"
+            "notification_status": "TEXT DEFAULT 'NONE'",
+            "eye_open_prob": "REAL",
+            "yawn_prob": "REAL"
         })
         _migrate_table_columns(conn, "emergency_alerts", {
             "location_accuracy": "REAL",
@@ -237,7 +241,9 @@ def save_safety_event(
     hazard_activated: bool = False,
     sos_sent: bool = False,
     photo_path: Optional[str] = None,
-    notification_status: str = "NONE"
+    notification_status: str = "NONE",
+    eye_open_prob: Optional[float] = None,
+    yawn_prob: Optional[float] = None
 ) -> int:
     """Records a driver attentiveness or safety event into SQLite."""
     with get_connection() as conn:
@@ -261,9 +267,11 @@ def save_safety_event(
                 sos_sent,
                 photo_path,
                 notification_status,
+                eye_open_prob,
+                yawn_prob,
                 timestamp
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             driver_id,
             vehicle_id,
@@ -282,6 +290,8 @@ def save_safety_event(
             int(sos_sent),
             str(photo_path) if photo_path else None,
             notification_status,
+            round(eye_open_prob, 4) if eye_open_prob is not None else None,
+            round(yawn_prob, 4) if yawn_prob is not None else None,
             datetime.now().isoformat()
         ))
         conn.commit()

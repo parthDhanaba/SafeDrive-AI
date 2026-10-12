@@ -80,6 +80,8 @@ class EmergencyCoordinator:
         ear = eye_data.get("ear", 0.0)
         mar = eye_data.get("mar", 0.0)
         closed_frames = eye_data.get("closed_frames", 0)
+        eye_open_prob = eye_data.get("eye_open_prob")
+        yawn_prob = eye_data.get("yawn_prob")
 
         # -------------------------------------------------------------
         # 1. Periodic Telemetry Logging
@@ -97,7 +99,9 @@ class EmergencyCoordinator:
                     yawn_count=current_yawns,
                     closed_frames=closed_frames,
                     response_status="ALARM" if yawn_danger else "DETECTED",
-                    alarm_triggered=yawn_danger
+                    alarm_triggered=yawn_danger,
+                    eye_open_prob=eye_open_prob,
+                    yawn_prob=yawn_prob
                 )
             except Exception as e:
                 logger.error(f"Database write error for yawn event: {e}")
@@ -115,7 +119,9 @@ class EmergencyCoordinator:
                     yawn_count=current_yawns,
                     closed_frames=closed_frames,
                     response_status="ALARM",
-                    alarm_triggered=True
+                    alarm_triggered=True,
+                    eye_open_prob=eye_open_prob,
+                    yawn_prob=yawn_prob
                 )
             except Exception as e:
                 logger.error(f"Database write error for drowsiness event: {e}")
@@ -264,7 +270,9 @@ class EmergencyCoordinator:
                 hazard_activated=True,
                 sos_sent=True,
                 photo_path=str(photo_path) if photo_path else None,
-                notification_status="PENDING"
+                notification_status="PENDING",
+                eye_open_prob=eye_data.get("eye_open_prob"),
+                yawn_prob=eye_data.get("yawn_prob")
             )
             self.last_event_id = event_id
         except Exception as e:

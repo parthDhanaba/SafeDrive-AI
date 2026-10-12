@@ -18,8 +18,19 @@ LOGS_DIR = BASE_DIR / "logs"
 CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Models directory and model file paths
+MODELS_DIR = BASE_DIR / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+EYE_MODEL_PATH = MODELS_DIR / "eye_drowsiness_model.keras"
+YAWN_MODEL_PATH = MODELS_DIR / "yawn_model.keras"
+
 # Load environment variables
 load_dotenv(BASE_DIR / ".env")
+
+# AI Model Detection Thresholds (Configurable)
+EYE_MODEL_THRESHOLD = float(os.getenv("EYE_MODEL_THRESHOLD", "0.50"))      # Prob < 0.50 -> Closed eyes (Class 0: closed, 1: open)
+YAWN_MODEL_THRESHOLD = float(os.getenv("YAWN_MODEL_THRESHOLD", "0.40"))    # Prob >= 0.40 -> Yawn (Class 0: no_yawn, 1: yawn)
+AI_DETECTION_MODE = os.getenv("AI_DETECTION_MODE", "hybrid").strip().lower() # "hybrid", "model", or "geometric"
 
 # Detection Thresholds (Preserve verified values)
 EAR_THRESHOLD = 0.22              # Eye Aspect Ratio threshold for eye closure

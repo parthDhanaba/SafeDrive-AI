@@ -31,7 +31,7 @@ from config import (
 )
 from logger import logger
 from utils import mask_phone_number, get_display_timestamp
-from database import get_driver, get_vehicle, get_event_statistics, get_recent_events
+from database import initialize_database, get_driver, get_vehicle, get_event_statistics, get_recent_events
 
 # Set global appearance mode
 ctk.set_appearance_mode("Dark")
@@ -152,6 +152,7 @@ class SafeDriveDashboard(ctk.CTk):
         vehicle_id: Optional[int] = None
     ):
         super().__init__()
+        initialize_database()
 
         self.on_reset_callback = on_reset_callback
         self.on_quit_callback = on_quit_callback
@@ -719,15 +720,24 @@ class SafeDriveDashboard(ctk.CTk):
         ear_norm = min(1.0, max(0.0, disp_ear / 0.40))
         self.bar_ear.set(ear_norm)
 
+        # AI Model telemetry tags
+        ai_eye_prob = eye_data.get("eye_open_prob")
+        ai_yawn_prob = eye_data.get("yawn_prob")
+        eye_active = eye_data.get("eye_model_active", False)
+        yawn_active_model = eye_data.get("yawn_model_active", False)
+
+        eye_ai_suffix = f" | AI: {ai_eye_prob:.0%}" if (eye_active and ai_eye_prob is not None) else ""
+        yawn_ai_suffix = f" | AI: {ai_yawn_prob:.0%}" if (yawn_active_model and ai_yawn_prob is not None) else ""
+
         if self._ear_state_hysteresis == "CRITICAL" or raw_ear < EAR_THRESHOLD:
             self.bar_ear.configure(progress_color=ACCENT_RED)
-            self.lbl_ear_sub.configure(text=f"CRITICAL: <{EAR_THRESHOLD} | State: {state}", text_color=ACCENT_RED)
+            self.lbl_ear_sub.configure(text=f"CRITICAL: <{EAR_THRESHOLD} | State: {state}{eye_ai_suffix}", text_color=ACCENT_RED)
         elif self._ear_state_hysteresis == "WARNING":
             self.bar_ear.configure(progress_color=ACCENT_AMBER)
-            self.lbl_ear_sub.configure(text=f"WARNING: Approaching {EAR_THRESHOLD} | {state}", text_color=ACCENT_AMBER)
+            self.lbl_ear_sub.configure(text=f"WARNING: Approaching {EAR_THRESHOLD} | {state}{eye_ai_suffix}", text_color=ACCENT_AMBER)
         else:
             self.bar_ear.configure(progress_color=ACCENT_EMERALD)
-            self.lbl_ear_sub.configure(text=f"Safe: >{EAR_THRESHOLD} | State: {state}", text_color=TEXT_DIM)
+            self.lbl_ear_sub.configure(text=f"Safe: >{EAR_THRESHOLD} | State: {state}{eye_ai_suffix}", text_color=TEXT_DIM)
 
         # 2. MAR Gauge
         if self._last_rendered_mar != disp_mar:
@@ -739,13 +749,13 @@ class SafeDriveDashboard(ctk.CTk):
 
         if disp_mar >= MAR_THRESHOLD or raw_mar >= MAR_THRESHOLD:
             self.bar_mar.configure(progress_color=ACCENT_RED)
-            self.lbl_mar_sub.configure(text=f"YAWNING DETECTED: >={MAR_THRESHOLD}", text_color=ACCENT_RED)
+            self.lbl_mar_sub.configure(text=f"YAWNING DETECTED: >={MAR_THRESHOLD}{yawn_ai_suffix}", text_color=ACCENT_RED)
         elif disp_mar >= 0.35:
             self.bar_mar.configure(progress_color=ACCENT_AMBER)
-            self.lbl_mar_sub.configure(text=f"Mouth Open: Approaching {MAR_THRESHOLD}", text_color=ACCENT_AMBER)
+            self.lbl_mar_sub.configure(text=f"Mouth Open: Approaching {MAR_THRESHOLD}{yawn_ai_suffix}", text_color=ACCENT_AMBER)
         else:
             self.bar_mar.configure(progress_color=ACCENT_CYAN)
-            self.lbl_mar_sub.configure(text=f"Nominal: <{MAR_THRESHOLD}", text_color=TEXT_DIM)
+            self.lbl_mar_sub.configure(text=f"Nominal: <{MAR_THRESHOLD}{yawn_ai_suffix}", text_color=TEXT_DIM)
 
         # Summary chip in card header
         if self._ear_state_hysteresis == "CRITICAL" or raw_ear < EAR_THRESHOLD:
