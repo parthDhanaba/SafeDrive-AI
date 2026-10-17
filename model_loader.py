@@ -18,43 +18,45 @@ import numpy as np
 # Ensure Keras uses PyTorch backend for high performance and compatibility
 os.environ.setdefault("KERAS_BACKEND", "torch")
 
-# Set up pure-Python HDF5 shim (pyfive) to ensure 100% reliability
-# and prevent Windows Smart App Control from blocking C-extension DLLs.
+# Prefer native h5py; fallback to pure-Python pyfive only if h5py is missing or blocked
 try:
-    import pyfive
-
-    class _DummyLink:
-        pass
-
-    pyfive.ExternalLink = _DummyLink
-    pyfive.SoftLink = _DummyLink
-
-    if hasattr(pyfive, "high_level") and hasattr(pyfive.high_level, "Dataset"):
-        pyfive.high_level.Dataset.external = None
-        pyfive.high_level.Dataset.is_virtual = False
-        pyfive.high_level.Dataset.__array__ = (
-            lambda self, dtype=None: self[()] if dtype is None else self[()].astype(dtype)
-        )
-
-    if hasattr(pyfive, "h5d") and hasattr(pyfive.h5d, "DatasetID"):
-        pyfive.h5d.DatasetID.get_storage_size = lambda self: 100000000
-
-    _orig_get = pyfive.Group.get
-
-    def _patched_get(self, name, default=None, **kwargs):
-        if name not in self:
-            return default
-        if kwargs.get("getclass"):
-            return type(self[name])
-        return _orig_get(self, name, default)
-
-    pyfive.Group.get = _patched_get
-    pyfive.File.__bool__ = lambda self: True
-    pyfive.Group.__bool__ = lambda self: True
-
-    sys.modules["h5py"] = pyfive
+    import h5py
 except ImportError:
-    pass
+    try:
+        import pyfive
+
+        class _DummyLink:
+            pass
+
+        pyfive.ExternalLink = _DummyLink
+        pyfive.SoftLink = _DummyLink
+
+        if hasattr(pyfive, "high_level") and hasattr(pyfive.high_level, "Dataset"):
+            pyfive.high_level.Dataset.external = None
+            pyfive.high_level.Dataset.is_virtual = False
+            pyfive.high_level.Dataset.__array__ = (
+                lambda self, dtype=None, copy=None: self[()] if dtype is None else self[()].astype(dtype)
+            )
+
+        if hasattr(pyfive, "h5d") and hasattr(pyfive.h5d, "DatasetID"):
+            pyfive.h5d.DatasetID.get_storage_size = lambda self: 100000000
+
+        _orig_get = pyfive.Group.get
+
+        def _patched_get(self, name, default=None, **kwargs):
+            if name not in self:
+                return default
+            if kwargs.get("getclass"):
+                return type(self[name])
+            return _orig_get(self, name, default)
+
+        pyfive.Group.get = _patched_get
+        pyfive.File.__bool__ = lambda self: True
+        pyfive.Group.__bool__ = lambda self: True
+
+        sys.modules["h5py"] = pyfive
+    except ImportError:
+        pass
 
 import torch
 import keras

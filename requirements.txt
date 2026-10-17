@@ -1,7 +1,7 @@
-# SafeDrive-AI Python 3.11 Dependencies
-mediapipe==0.10.21
-numpy==1.26.4
-pygame==2.6.1
+# SafeDrive-AI Core Computer Vision & Audio Dependencies
+mediapipe>=0.10.20
+numpy>=1.26.0
+pygame>=2.5.0
 opencv-python>=4.8.0
 python-dotenv>=1.0.0
 Pillow>=10.0.0
@@ -9,7 +9,12 @@ customtkinter>=6.0.0
 requests>=2.31.0
 twilio>=8.0.0
 
+# Flask REST & MJPEG Video Streaming Backend
+flask>=3.0.0
+flask-cors>=4.0.0
+
 # Deep Learning AI Model Inference Engine
 torch>=2.1.0
 keras>=3.0.0
+h5py>=3.10.0
 pyfive>=1.2.0

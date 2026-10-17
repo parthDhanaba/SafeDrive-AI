@@ -33,9 +33,11 @@ from logger import logger
 from utils import mask_phone_number, get_display_timestamp
 from database import initialize_database, get_driver, get_vehicle, get_event_statistics, get_recent_events
 
-# Set global appearance mode
-ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
+# Set global appearance mode safely
+if hasattr(ctk, "set_appearance_mode"):
+    ctk.set_appearance_mode("Dark")
+if hasattr(ctk, "set_default_color_theme"):
+    ctk.set_default_color_theme("blue")
 
 # Luxury Automotive Cockpit Palette (Obsidian / Titanium / Electric Cyan)
 BG_MAIN = "#060911"
