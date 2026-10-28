@@ -8,6 +8,10 @@ from server import app, pipeline, eye_model, yawn_model
 
 
 class TestServerAPI(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        pipeline.stop()
+
     def setUp(self):
         self.client = app.test_client()
 

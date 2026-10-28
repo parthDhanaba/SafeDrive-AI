@@ -62,6 +62,7 @@ class EyeDetector:
 
     def __init__(self):
         self.closed_frames = 0
+        self.consecutive_open_frames = 0
         self.yawn_count = 0
         self.mouth_open_frames = 0
         self.yawn_active = False
@@ -163,10 +164,10 @@ class EyeDetector:
         crop = frame[y1:y2, x1:x2].copy()
         return crop, (x1, y1, x2, y2)
 
-    def process(self, frame: np.ndarray, face_landmarks) -> Tuple[np.ndarray, Dict[str, Any]]:
+    def process(self, frame: np.ndarray, face_landmarks, raw_frame: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         Processes a video frame with MediaPipe facial landmarks, runs deep learning
-        inference on eye and mouth crops, and applies fusion logic.
+        inference on clean eye and mouth crops, and applies fusion logic.
         """
         if face_landmarks is None or frame is None:
             return frame, {
@@ -183,6 +184,8 @@ class EyeDetector:
             }
 
         h, w, _ = frame.shape
+        # Use clean, un-annotated source pixels for neural network crops
+        clean_source = raw_frame if raw_frame is not None else frame.copy()
 
         # -------------------------------------------------------------
         # 1. Landmark Extraction
@@ -193,12 +196,6 @@ class EyeDetector:
         right_eye_full_pts = self.get_points(face_landmarks, self.RIGHT_EYE_FULL, w, h)
         mouth_pts = self.get_points(face_landmarks, self.MOUTH_FULL, w, h)
 
-        # Draw landmark points on video
-        for p in left_eye_pts:
-            cv2.circle(frame, p, 3, (0, 255, 0), -1, cv2.LINE_AA)
-        for p in right_eye_pts:
-            cv2.circle(frame, p, 3, (255, 120, 0), -1, cv2.LINE_AA)
-
         # -------------------------------------------------------------
         # 2. Geometric EAR & MAR Computations
         # -------------------------------------------------------------
@@ -208,15 +205,15 @@ class EyeDetector:
         mar = self.calculate_mar(face_landmarks, w, h)
 
         # -------------------------------------------------------------
-        # 3. Deep Learning: Eye Drowsiness Model
+        # 3. Deep Learning: Eye Drowsiness Model (from clean crops)
         # -------------------------------------------------------------
         eye_open_prob = None
         left_eye_prob = None
         right_eye_prob = None
 
         if eye_model.loaded:
-            left_crop, l_box = self._extract_crop(frame, left_eye_full_pts, pad_ratio=0.30)
-            right_crop, r_box = self._extract_crop(frame, right_eye_full_pts, pad_ratio=0.30)
+            left_crop, l_box = self._extract_crop(clean_source, left_eye_full_pts, pad_ratio=0.30)
+            right_crop, r_box = self._extract_crop(clean_source, right_eye_full_pts, pad_ratio=0.30)
 
             if left_crop is not None:
                 left_eye_prob = eye_model.predict(left_crop)
@@ -236,11 +233,11 @@ class EyeDetector:
                         cv2.rectangle(frame, (bx1, by1), (bx2, by2), col, 1, cv2.LINE_AA)
 
         # -------------------------------------------------------------
-        # 4. Deep Learning: Yawn Detection Model
+        # 4. Deep Learning: Yawn Detection Model (from clean crop)
         # -------------------------------------------------------------
         yawn_prob = None
         if yawn_model.loaded:
-            mouth_crop, m_box = self._extract_crop(frame, mouth_pts, pad_ratio=0.35)
+            mouth_crop, m_box = self._extract_crop(clean_source, mouth_pts, pad_ratio=0.35)
             if mouth_crop is not None:
                 yawn_prob = yawn_model.predict(mouth_crop)
                 if yawn_prob is not None:
@@ -259,35 +256,41 @@ class EyeDetector:
         # -------------------------------------------------------------
         # 5. Hybrid Sensor Fusion Logic (Eyes & Drowsiness)
         # -------------------------------------------------------------
-        # Evaluate eye closure using hybrid consensus between EAR and Neural Network
+        # Evaluate eye closure using consensus between EAR and Neural Network
         if eye_open_prob is not None and AI_DETECTION_MODE == "model":
             is_closed = eye_open_prob < self.EYE_MODEL_THRESHOLD
         elif eye_open_prob is not None and AI_DETECTION_MODE == "hybrid":
             # Hybrid consensus:
-            # - Model strongly closed (< 0.35) -> Closed
-            # - EAR severely closed (< 0.17) -> Closed
-            # - Agreement (model < threshold and EAR < threshold) -> Closed
-            # - Weighted score fallback
+            # - Neural model detects closed eyes without severe contradictory EAR (ear < 0.35)
+            # - OR geometric EAR detects closed eyes without severe contradictory model (eye_open_prob < 0.80)
+            # - OR both agree (model < threshold and EAR < threshold)
+            # - OR weighted consensus indicates closure
             ai_closed_score = 1.0 - eye_open_prob
-            ear_closed_score = max(0.0, min(1.0, (self.EAR_THRESHOLD - ear) / (self.EAR_THRESHOLD * 0.5) + 0.5))
+            ear_closed_score = max(0.0, min(1.0, (self.EAR_THRESHOLD - ear) / max(0.01, self.EAR_THRESHOLD * 0.5) + 0.5))
             weighted_closure = 0.60 * ai_closed_score + 0.40 * ear_closed_score
 
             is_closed = (
-                (eye_open_prob < 0.35)
-                or (ear < 0.17 and eye_open_prob < 0.65)
+                (eye_open_prob < self.EYE_MODEL_THRESHOLD and ear < 0.35)
+                or (ear < self.EAR_THRESHOLD and eye_open_prob < 0.80)
                 or (eye_open_prob < self.EYE_MODEL_THRESHOLD and ear < self.EAR_THRESHOLD)
-                or (weighted_closure >= 0.52)
+                or (weighted_closure >= 0.50)
             )
         else:
             # Geometric EAR fallback
             is_closed = ear < self.EAR_THRESHOLD
 
+        # Temporal logic with single-frame jitter tolerance
         if is_closed:
             state = "CLOSED"
             self.closed_frames += 1
+            self.consecutive_open_frames = 0
         else:
             state = "OPEN"
-            self.closed_frames = 0
+            self.consecutive_open_frames += 1
+            if self.consecutive_open_frames >= 2:
+                self.closed_frames = 0
+            else:
+                self.closed_frames = max(0, self.closed_frames - 1)
 
         drowsy = self.closed_frames >= self.CLOSED_FRAMES_THRESHOLD
 
@@ -301,9 +304,6 @@ class EyeDetector:
         if yawn_prob is not None and AI_DETECTION_MODE == "model":
             yawn_candidate = yawn_prob >= self.YAWN_MODEL_THRESHOLD
         elif yawn_prob is not None and AI_DETECTION_MODE == "hybrid":
-            # Hybrid criteria:
-            # Requires physical mouth opening (MAR >= 0.30) validated by AI model (yawn_prob >= 0.40),
-            # or wide opening (MAR >= MAR_THRESHOLD) confirmed by AI (yawn_prob >= 0.20)
             yawn_candidate = (
                 (yawn_prob >= self.YAWN_MODEL_THRESHOLD and mar >= 0.30)
                 or (mar >= self.MAR_THRESHOLD and yawn_prob >= 0.20)
@@ -329,6 +329,12 @@ class EyeDetector:
                 self.yawn_cooldown = self.YAWN_COOLDOWN_FRAMES
             self.mouth_open_frames = 0
 
+        # Draw landmark points on video for HUD display (after clean crops are processed)
+        for p in left_eye_pts:
+            cv2.circle(frame, p, 2, (0, 255, 0), -1, cv2.LINE_AA)
+        for p in right_eye_pts:
+            cv2.circle(frame, p, 2, (255, 120, 0), -1, cv2.LINE_AA)
+
         # Draw HUD eye status on frame
         eye_tag = f"EYES: {state}"
         if eye_open_prob is not None:
@@ -353,6 +359,7 @@ class EyeDetector:
     def reset_detection(self):
         """Resets all consecutive frame counters and yawn tallies."""
         self.closed_frames = 0
+        self.consecutive_open_frames = 0
         self.yawn_count = 0
         self.mouth_open_frames = 0
         self.yawn_active = False

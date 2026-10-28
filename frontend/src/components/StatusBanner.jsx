@@ -11,6 +11,54 @@ export default function StatusBanner({ telemetry, alarm, onReset }) {
   const isAlarmPlaying = alarm?.is_playing;
   const dangerReason = alarm?.danger_reason;
 
+  // Browser Web Audio companion alarm
+  React.useEffect(() => {
+    let audioCtx = null;
+    let osc = null;
+    let gain = null;
+    let timer = null;
+
+    if (isAlarmPlaying || isCountdown || isEmergency) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          audioCtx = new AudioCtx();
+          osc = audioCtx.createOscillator();
+          gain = audioCtx.createGain();
+
+          osc.type = isEmergency ? 'sawtooth' : 'sine';
+          osc.frequency.setValueAtTime(isEmergency ? 880 : 750, audioCtx.currentTime);
+
+          gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+
+          let high = true;
+          timer = setInterval(() => {
+            if (audioCtx && osc && audioCtx.state === 'running') {
+              const freq = high ? (isEmergency ? 960 : 850) : (isEmergency ? 720 : 650);
+              osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+              high = !high;
+            }
+          }, 250);
+        }
+      } catch (e) {
+        // Harmless if browser blocks prior to user gesture
+      }
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+      if (osc) {
+        try { osc.stop(); osc.disconnect(); } catch (e) {}
+      }
+      if (audioCtx) {
+        try { audioCtx.close(); } catch (e) {}
+      }
+    };
+  }, [isAlarmPlaying, isCountdown, isEmergency]);
+
   // Determine Primary Visual Theme
   let statusTheme = {
     title: 'ATTENTIVE & SAFE',

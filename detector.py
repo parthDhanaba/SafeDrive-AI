@@ -182,33 +182,5 @@ class FaceDetector:
             cv2.LINE_AA
         )
 
-        num_points = len(landmarks_list)
-
-        # Left eye landmarks
-        for idx in self.LEFT_EYE:
-            if idx < num_points:
-                lm = landmarks_list[idx]
-                cv2.circle(frame, (int(lm.x * width), int(lm.y * height)), 2, (0, 255, 0), -1, cv2.LINE_AA)
-
-        # Right eye landmarks
-        for idx in self.RIGHT_EYE:
-            if idx < num_points:
-                lm = landmarks_list[idx]
-                cv2.circle(frame, (int(lm.x * width), int(lm.y * height)), 2, (0, 255, 0), -1, cv2.LINE_AA)
-
-        # Mouth lip connections
-        mouth_pts = set()
-        for start_idx, end_idx in self.lips_connections:
-            if start_idx < num_points and end_idx < num_points:
-                mouth_pts.add(start_idx)
-                mouth_pts.add(end_idx)
-                p1 = (int(landmarks_list[start_idx].x * width), int(landmarks_list[start_idx].y * height))
-                p2 = (int(landmarks_list[end_idx].x * width), int(landmarks_list[end_idx].y * height))
-                cv2.line(frame, p1, p2, (255, 0, 255), 1, cv2.LINE_AA)
-
-        for idx in mouth_pts:
-            if idx < num_points:
-                lm = landmarks_list[idx]
-                cv2.circle(frame, (int(lm.x * width), int(lm.y * height)), 2, (255, 0, 255), -1, cv2.LINE_AA)
-
+        # Note: Eye and mouth landmark visualizations are rendered in eye.py after clean crops are taken
         return frame, face_landmarks

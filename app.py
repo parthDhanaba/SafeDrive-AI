@@ -139,8 +139,9 @@ class CameraWorker(threading.Thread):
             frame = cv2.flip(frame, 1)
 
             # Computer Vision Pipeline (Eye + Mouth Landmarks)
+            raw_frame = frame.copy()
             frame, face_landmarks = self.detector.detect(frame)
-            frame, eye_data = self.eye_detector.process(frame, face_landmarks)
+            frame, eye_data = self.eye_detector.process(frame, face_landmarks, raw_frame=raw_frame)
 
             # FPS calculation
             curr_time = time.time()

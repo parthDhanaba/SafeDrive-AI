@@ -33,9 +33,9 @@ YAWN_MODEL_THRESHOLD = float(os.getenv("YAWN_MODEL_THRESHOLD", "0.40"))    # Pro
 AI_DETECTION_MODE = os.getenv("AI_DETECTION_MODE", "hybrid").strip().lower() # "hybrid", "model", or "geometric"
 
 # Detection Thresholds (Preserve verified values)
-EAR_THRESHOLD = 0.22              # Eye Aspect Ratio threshold for eye closure
-CLOSED_FRAMES_THRESHOLD = 45      # Sustained frames below threshold to trigger drowsiness
-MAR_THRESHOLD = 0.50              # Mouth Aspect Ratio threshold for yawn detection
+EAR_THRESHOLD = float(os.getenv("EAR_THRESHOLD", "0.22"))              # Eye Aspect Ratio threshold for eye closure
+CLOSED_FRAMES_THRESHOLD = int(os.getenv("CLOSED_FRAMES_THRESHOLD", "20"))      # Sustained frames below threshold to trigger drowsiness (~1.5s at real-time FPS)
+MAR_THRESHOLD = float(os.getenv("MAR_THRESHOLD", "0.50"))              # Mouth Aspect Ratio threshold for yawn detection
 YAWN_MIN_FRAMES = 8               # Minimum consecutive frames mouth must be open to register yawn
 YAWN_LIMIT = 3                    # Number of yawns to trigger danger warning
 YAWN_COOLDOWN_FRAMES = 15         # Cooldown frames after a registered yawn

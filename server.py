@@ -118,6 +118,13 @@ class VisionPipeline:
 
         self.session_start_time = time.time()
         self.worker_thread: Optional[threading.Thread] = None
+
+        # Diagnostic logging state tracking
+        self._last_diag_state = None
+        self._last_diag_drowsy = None
+        self._last_diag_alarm = None
+        self._last_diag_log_time = 0.0
+
         self._init_camera()
 
     def _init_camera(self):
@@ -263,8 +270,9 @@ class VisionPipeline:
             else:
                 # Real camera frame -> Run MediaPipe + Trained Models
                 try:
+                    raw_frame = frame.copy()
                     frame, face_landmarks = detector.detect(frame)
-                    processed_frame, eye_data = eye_detector.process(frame, face_landmarks)
+                    processed_frame, eye_data = eye_detector.process(frame, face_landmarks, raw_frame=raw_frame)
                 except Exception as e:
                     logger.error(f"Error processing frame through vision pipeline: {e}")
                     processed_frame = frame
@@ -288,6 +296,30 @@ class VisionPipeline:
                 )
             except Exception as e:
                 logger.error(f"Emergency coordinator error: {e}")
+
+            # Rate-limited & state-change diagnostic logging (Requirement 8)
+            now = time.time()
+            current_state = eye_data.get("state")
+            current_drowsy = eye_data.get("drowsy")
+            current_alarm = alarm_manager.is_playing()
+            state_changed = (
+                current_state != getattr(self, "_last_diag_state", None) or
+                current_drowsy != getattr(self, "_last_diag_drowsy", None) or
+                current_alarm != getattr(self, "_last_diag_alarm", None)
+            )
+            time_elapsed = now - getattr(self, "_last_diag_log_time", 0.0)
+            if state_changed or (time_elapsed >= 2.0 and face_landmarks is not None):
+                self._last_diag_state = current_state
+                self._last_diag_drowsy = current_drowsy
+                self._last_diag_alarm = current_alarm
+                self._last_diag_log_time = now
+                logger.info(
+                    f"[DIAGNOSTIC] EAR={eye_data.get('ear', 0.0):.3f} (thresh={eye_detector.EAR_THRESHOLD:.2f}) | "
+                    f"EyeOpenProb={eye_data.get('eye_open_prob', 1.0):.3f} (thresh={eye_detector.EYE_MODEL_THRESHOLD:.2f}) | "
+                    f"ClosedFrames={eye_data.get('closed_frames', 0)}/{eye_detector.CLOSED_FRAMES_THRESHOLD} | "
+                    f"State={current_state} | Drowsy={current_drowsy} | "
+                    f"AlarmPlaying={current_alarm} | Countdown={coordinator.countdown_active}"
+                )
 
             # Draw HUD status badge on frame top-right
             h, w = processed_frame.shape[:2]
@@ -525,8 +557,10 @@ def manage_config():
             eye_detector.EYE_MODEL_THRESHOLD = float(data["eye_model_threshold"])
         if "yawn_model_threshold" in data:
             eye_detector.YAWN_MODEL_THRESHOLD = float(data["yawn_model_threshold"])
+        if "closed_frames_threshold" in data:
+            eye_detector.CLOSED_FRAMES_THRESHOLD = int(data["closed_frames_threshold"])
 
-        logger.info(f"Updated live config: EAR={eye_detector.EAR_THRESHOLD}, MAR={eye_detector.MAR_THRESHOLD}")
+        logger.info(f"Updated live config: EAR={eye_detector.EAR_THRESHOLD}, MAR={eye_detector.MAR_THRESHOLD}, CLOSED_FRAMES={eye_detector.CLOSED_FRAMES_THRESHOLD}")
         return jsonify({"success": True, "message": "Configuration updated"})
 
     return jsonify({
@@ -534,6 +568,7 @@ def manage_config():
         "mar_threshold": eye_detector.MAR_THRESHOLD,
         "eye_model_threshold": eye_detector.EYE_MODEL_THRESHOLD,
         "yawn_model_threshold": eye_detector.YAWN_MODEL_THRESHOLD,
+        "closed_frames_threshold": eye_detector.CLOSED_FRAMES_THRESHOLD,
         "yawn_limit": YAWN_LIMIT,
         "response_timeout": RESPONSE_TIMEOUT_SECONDS,
         "ai_detection_mode": AI_DETECTION_MODE
